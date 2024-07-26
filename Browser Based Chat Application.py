@@ -1,101 +1,53 @@
-import tkinter as tk
-from tkinter import messagebox
-from tkinter import ttk
-import string
-import random
-import pyperclip
+import socket
+import threading
 
-def generate_password():
-    length = length_var.get()
-    if length <= 0:
-        messagebox.showerror("Error", "Please enter a valid password length.")
-        return
+HOST = '127.0.0.1'
+PORT = 1489
+LIMIT = 10
+active_clients = []
 
-    character_set = ''
-    if uppercase_var.get():
-        character_set += string.ascii_uppercase
-    if lowercase_var.get():
-        character_set += string.ascii_lowercase
-    if digits_var.get():
-        character_set += string.digits
-    if symbols_var.get():
-        character_set += string.punctuation
+def listen_from_message(client, username):
+    while True:
+        message = client.recv(2048).decode('utf-8')
+        if message:
+            final_msg = username + '~' + message
+            sending_message_to_all(final_msg)
+        else:
+            print(f"Message from {username} is empty")
 
-    if not character_set:
-        messagebox.showerror("Error", "Please select at least one character set.")
-        return
+def send_message_to_client(client, message):
+    client.sendall(message.encode())
 
-    password = ''.join(random.choice(character_set) for _ in range(length))
-    password_entry.delete(0, 'end')
-    password_entry.insert('end', password)
+def sending_message_to_all(message):
+    for user in active_clients:
+        send_message_to_client(user[1], message)
 
-def copy_password():
-    password = password_entry.get()
-    if password:
-        pyperclip.copy(password)
-        messagebox.showinfo("Password Copied", "Password copied to clipboard successfully!")
-    else:
-        messagebox.showwarning("No Password", "No password to copy!")
+def client_handler(client):
+    while True:
+        username = client.recv(2048).decode('utf-8')
+        if username:
+            active_clients.append((username, client))
+            prompt_message = "CHATBOT ~" + f"{username} joined the chat"
+            sending_message_to_all(prompt_message)
+            break
+        else:
+            print("Username should not be empty")
 
-root = tk.Tk()
-root.title("Random Password Generator")
-root.geometry("500x500")
-root.configure(bg="#f0f0f0")
+    threading.Thread(target=listen_from_message, args=(client, username,)).start()
 
-frame = tk.Frame(root, bg="#f0f0f0")
-frame.pack(expand=True, padx=20, pady=20)
+def main():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        server.bind((HOST, PORT))
+        print(f"Running the server on {HOST} {PORT}")
+    except Exception as e:
+        print(f"Unable to connect to Host {HOST} and port {PORT}")
 
-length_label = tk.Label(frame, text="Password Length:", bg="#f0f0f0", font=("Helvetica", 12))
-length_label.grid(row=0, column=0, sticky="w", pady=5)
+    server.listen(LIMIT)
+    while True:
+        client, address = server.accept()
+        print(f"Successfully connected to client {address[0]} {address[1]}")
+        threading.Thread(target=client_handler, args=(client,)).start()
 
-length_var = tk.IntVar()
-length_entry = tk.Entry(frame, textvariable=length_var, font=("Helvetica", 12))
-length_entry.grid(row=0, column=1, sticky="w", pady=5)
-
-uppercase_var = tk.BooleanVar()
-uppercase_checkbox = tk.Checkbutton(frame, text="Uppercase", variable=uppercase_var, bg="#f0f0f0", font=("Helvetica", 10))
-uppercase_checkbox.grid(row=1, column=0, sticky="w", pady=2)
-
-lowercase_var = tk.BooleanVar()
-lowercase_checkbox = tk.Checkbutton(frame, text="Lowercase", variable=lowercase_var, bg="#f0f0f0", font=("Helvetica", 10))
-lowercase_checkbox.grid(row=2, column=0, sticky="w", pady=2)
-
-digits_var = tk.BooleanVar()
-digits_checkbox = tk.Checkbutton(frame, text="Digits", variable=digits_var, bg="#f0f0f0", font=("Helvetica", 10))
-digits_checkbox.grid(row=3, column=0, sticky="w", pady=2)
-
-symbols_var = tk.BooleanVar()
-symbols_checkbox = tk.Checkbutton(frame, text="Symbols", variable=symbols_var, bg="#f0f0f0", font=("Helvetica", 10))
-symbols_checkbox.grid(row=4, column=0, sticky="w", pady=2)
-
-generate_button = tk.Button(frame, text="Generate Password", command=generate_password, bg="#4CAF50", fg="white", font=("Helvetica", 12, "bold"))
-generate_button.grid(row=5, column=0, columnspan=2, pady=10)
-
-password_entry = tk.Entry(frame, show="*", font=("Helvetica", 14), justify="center")
-password_entry.grid(row=6, column=0, columnspan=2, pady=10)
-
-copy_button = tk.Button(frame, text="Copy Password", command=copy_password, bg="#008CBA", fg="white", font=("Helvetica", 12, "bold"))
-copy_button.grid(row=7, column=0, columnspan=2)
-
-def on_enter(event):
-    event.widget.config(bg="#5EBABA")
-
-def on_leave(event):
-    event.widget.config(bg="#008CBA" if event.widget == copy_button else "#4CAF50")
-
-copy_button.bind("<Enter>", on_enter)
-copy_button.bind("<Leave>", on_leave)
-
-generate_button.bind("<Enter>", on_enter)
-generate_button.bind("<Leave>", on_leave)
-
-def pulsate_animation(widget):
-    def animate():
-        widget.config(bg="#5EBABA")
-        widget.after(500, lambda: widget.config(bg="#4CAF50"))
-        widget.after(1000, animate)
-    animate()
-
-pulsate_animation(generate_button)
-
-root.mainloop()
+if __name__ == '__main__':
+    main()
